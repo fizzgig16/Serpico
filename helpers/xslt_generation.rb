@@ -3,9 +3,12 @@ require 'rubygems'
 require 'zipruby'
 require './model/master.rb'
 require 'cgi'
+require './helpers/lua_parser.rb'
 
 # This does the heavy lifting for taking a report template and creating the resulting XSLT template.
 #   It needs a lot of love but it works for now.
+
+$label_array = []
 
 # This is a custom error class to be thrown if the template fails to parse correctly.
 class ReportingError < RuntimeError
@@ -15,6 +18,61 @@ class ReportingError < RuntimeError
     @errorString = errorString
   end
 end
+
+def run_lua(document)
+	###############################
+	# « - begin Lua block
+	# » - end Lua block
+	
+	# Find any labels we might need later
+	build_label_array(document)
+	
+	lua = SerpicoLua.new(document)
+		
+	#puts "Doc before: #{document}"
+	
+	document.scan(/«(.*?)»/).each do |lua_block|
+		lua_block = lua_block[0]	# Only get the capture group
+		
+		# Replace paragraph ends with newlines
+		lua_block.gsub!(/<\/w:p>/, "\n")
+		
+		# Strip Word markup
+		lua_block.gsub!(/<\/?w:.*?\/?>/, "")
+		
+		#puts "Found Lua block: #{lua_block}"
+		lua.run_lua_block(lua_block)
+	end
+	
+	# After our processing is done, replace document with whatever is in the Lua state
+	document = lua.get_document()
+	#puts document
+end
+
+def build_label_array(document)
+	###############################
+	# ¤ - label (used for doing things like altering fonts, cells, etc.)
+
+	replace = document.split('¤')
+
+	if (((replace.size-1) % 2) != 0)
+		raise ReportingError.new("Uneven number of ¤. This is usually caused by a mismatch in a label.")
+	end
+
+	count = 0
+	replace.each do |label|
+		if (count % 2) == 0
+			count = count + 1
+			next
+		end
+
+		label = compress(label)
+		if $label_array.count(label) == 0
+			$label_array << label	# Add it if it doesn't exist
+		end
+	end
+end
+
 
 def generate_xslt(docx)
 
@@ -50,6 +108,8 @@ def generate_xslt(docx)
 	document = @top + document
 
 	for_iffies = []
+	
+	run_lua(document)
 ###########################
 
 # Ω - used as a normal substituion variable
@@ -527,6 +587,7 @@ def generate_xslt(docx)
 		document = document.sub('∆',"</w:t></w:r></w:p>#{end_ifs}</xsl:for-each><w:p><w:r><w:t>")
 	end
 
+
 ###########################
 
 # UNUSED
@@ -558,3 +619,4 @@ def compress(omega)
 
 	return replacement
 end
+
