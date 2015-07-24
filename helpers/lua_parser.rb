@@ -74,20 +74,55 @@ class SerpicoLua
 		
 		# Need to see if our label is immediately preceded by <w:t>; if so, means we have our own text block we can colorize, or at least star with
 		# If not, need to end the block we're currently in and start a new one with the color of our choosing
-		#puts "Noko: #{@noko}"
 		@noko.xpath("//w:t[contains(text(), \"#{full_label}\")]", 'w' => $W_URI).each do |text_node|
-			#puts "Found #{text_block}"
-			run_props = text_node.xpath("../w:rPr", 'w' => $W_URI).first
-			run_props.add_child(Nokogiri::XML::Node.new("color w:value=\"#{rgbstring}\"", @noko))
-			parent = text_node.xpath("..", 'w' => $W_URI)
-			puts "My parent is #{parent}"
+			puts "Found #{text_node}"
+			run = text_node.xpath("../../w:r", 'w' => $W_URI).first
+			run_props = text_node.xpath("../w:rPr", 'w' => $W_URI).first			
+
 			if (text_node.content == full_label)
 				# Text is by itself, we can apply the color directly
-				
+				run_props.add_child(Nokogiri::XML::Node.new("color w:val=\"#{rgbstring}\"", @noko))
 			else
+				# Split out the text before and after the label, make sure to keep the run properties the same, and apply the new properties to only the label
+				arr_fragments = text_node.content.force_encoding("ASCII-8BIT").split(full_label, 2)
+				new_run = run
+				new_text_node = text_node
 				
+				#puts "Frags: #{arr_fragments}"
+				while (arr_fragments.length >= 2) # Means we have more than one label to deal with
+					before = arr_fragments[0]
+					after = arr_fragments[1]
+					new_text_node.content = before
+					
+					# Now add a new run for the label
+					new_run = new_run.add_next_sibling(Nokogiri::XML::Node.new("r", @noko))
+					new_run_props = new_run.add_child(Nokogiri::XML::Node.new("rPr", @noko))
+					new_run_props.add_child(Nokogiri::XML::Node.new("color w:val=\"#{rgbstring}\"", @noko))
+					new_text_node = new_run.add_child(Nokogiri::XML::Node.new("t", @noko))
+					new_text_node.content = full_label
+					
+					# Now the next run
+					if (after != "")
+						new_run = new_run.add_next_sibling(Nokogiri::XML::Node.new("r", @noko))
+						new_run_props = new_run.add_child(Nokogiri::XML::Node.new("rPr", @noko))
+						new_text_node = new_run.add_child(Nokogiri::XML::Node.new("t", @noko))
+		
+						arr_fragments = after.split(full_label, 2)
+						if (arr_fragments.length < 2)
+							# Add the last part and call it a day
+							new_text_node.content = arr_fragments[0]
+							break
+						end
+					else
+						break
+					end
+				end
 			end
 			
+			puts "Content: #{@noko}\n\n"
+			@state.document = @noko.to_s()
+							
+			#parent = text_node.xpath("..", 'w' => $W_URI)
 			#puts "My parent is #{parent}"
 		end
 		

@@ -1,6 +1,7 @@
 db/master.db
 cert.pem
 key.pem
+Gemfile.lock
 tmp/*
 templates/*
 attachments/*

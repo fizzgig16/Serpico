@@ -47,6 +47,8 @@ def run_lua(document)
 	# After our processing is done, replace document with whatever is in the Lua state
 	document = lua.get_document()
 	#puts document
+	
+	return document
 end
 
 def build_label_array(document)
@@ -109,7 +111,7 @@ def generate_xslt(docx)
 
 	for_iffies = []
 	
-	run_lua(document)
+	document = run_lua(document)
 ###########################
 
 # Ω - used as a normal substituion variable
