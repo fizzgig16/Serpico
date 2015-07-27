@@ -54,6 +54,16 @@ class SerpicoLua
 			# Label:ForeColor(labelname, rgbstring) - RGB string will be something like 0070c0
 			'ForeColor' => lambda { |this, labelname, rgbstring| lua_label_forecolor(this, labelname, rgbstring) }
 		}
+		@state.Cell = 
+		{
+			# Cell:BackColor(labelname, rgbstring)
+			'BackColor' => lambda { |this, labelname, rgbstring| lua_cell_backcolor(this, labelname, rgbstring) }
+		}
+		@state.Row = 
+		{
+			# Row:BackColor(labelname, rgbstring)
+			'BackColor' => lambda { |this, labelname, rgbstring| lua_row_backcolor(this, labelname, rgbstring) }
+		}
 	end
 
 	# Gets the label complete with delimiters
@@ -70,12 +80,11 @@ class SerpicoLua
 	# Sets the foreground color of the label text
 	def lua_label_forecolor(this, labelname, rgbstring)
 		full_label = get_full_label(labelname)
-		document = @state.document
 		
 		# Need to see if our label is immediately preceded by <w:t>; if so, means we have our own text block we can colorize, or at least star with
 		# If not, need to end the block we're currently in and start a new one with the color of our choosing
 		@noko.xpath("//w:t[contains(text(), \"#{full_label}\")]", 'w' => $W_URI).each do |text_node|
-			puts "Found #{text_node}"
+			#puts "Found #{text_node}"
 			run = text_node.xpath("../../w:r", 'w' => $W_URI).first
 			run_props = text_node.xpath("../w:rPr", 'w' => $W_URI).first			
 
@@ -119,8 +128,8 @@ class SerpicoLua
 				end
 			end
 			
-			puts "Content: #{@noko}\n\n"
-			@state.document = @noko.to_s()
+			#puts "Content: #{@noko}\n\n"
+			#@state.document = @noko.to_s()
 							
 			#parent = text_node.xpath("..", 'w' => $W_URI)
 			#puts "My parent is #{parent}"
@@ -129,4 +138,51 @@ class SerpicoLua
 		@state.document = @state.document.gsub!(/#{full_label}/, "<w:color w:val=\"#{rgbstring}\"/>#{full_label}")
 	end
 			
+	
+	def lua_cell_backcolor(this, labelname, rgbstring)
+		full_label = get_full_label(labelname)
+		
+		@noko.xpath("//w:tc/w:p/w:r/w:t[contains(text(), \"#{full_label}\")]", 'w' => $W_URI).each do |cell_node|
+			#puts "Found #{cell_node}"
+			shading_node = cell_node.xpath("../../../w:tcPr/w:shd", 'w' => $W_URI)
+			if (shading_node.empty?)
+				prop_node = cell_node.xpath("../../../w:tcPr", 'w' => $W_URI)
+				#<w:shd w:fill="FF0000" w:val="clear"/>
+				prop_node.add_child(Nokogiri::XML::Node.new("shd w:fill=\"#{rgbstring}\" v:val=\"clear\"", @noko))
+			else
+				#puts "Found shading node"
+				shading_node = shading_node.first
+				shading_node["w:fill"] = rgbstring
+			end
+			
+			#puts "Content: #{@noko}\n\n"
+			#@state.document = @noko.to_s()
+		end
+	end
+	
+	def lua_row_backcolor(this, labelname, rgbstring)
+		full_label = get_full_label(labelname)
+		
+		@noko.xpath("//w:tr/w:tc/w:p/w:r/w:t[contains(text(), \"#{full_label}\")]", 'w' => $W_URI).each do |row_node|
+			puts "Found #{row_node}"
+			cell_nodes = row_node.xpath("../../../../w:tc", 'w' => $W_URI)
+			cell_nodes.each do |cell_node|
+				puts "node"
+				shading_node = cell_node.xpath("./w:tcPr/w:shd", 'w' => $W_URI)
+				if (shading_node.empty?)
+					puts "No shading node"
+					prop_node = cell_node.xpath("../../../w:tcPr", 'w' => $W_URI)
+					#<w:shd w:fill="FF0000" w:val="clear"/>
+					prop_node.add_child(Nokogiri::XML::Node.new("shd w:fill=\"#{rgbstring}\" v:val=\"clear\"", @noko))
+				else
+					puts "Found shading node"
+					shading_node = shading_node.first
+					shading_node["w:fill"] = rgbstring
+				end
+			end
+			
+			puts "Content: #{@noko}\n\n"
+			@state.document = @noko.to_s()
+		end
+	end
 end
