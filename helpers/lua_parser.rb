@@ -8,8 +8,41 @@ require 'rlua'
 
 $W_URI = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 
+def run_lua(document, report_xml)
+	###############################
+	# « - begin Lua block
+	# » - end Lua block
+	
+	# Find any labels we might need later
+	#build_label_array(document)
+	
+	lua = SerpicoLua.new(document, report_xml)
+		
+	#puts "Doc before: #{document}\n\n"
+	#puts "Report: #{report_xml}\n\n"
+	
+	document.scan(/«(.*?)»/).each do |lua_block|
+		lua_block = lua_block[0]	# Only get the capture group
+		
+		# Replace paragraph ends with newlines
+		lua_block.gsub!(/<\/w:p>/, "\n")
+		
+		# Strip Word markup
+		lua_block.gsub!(/<\/?w:.*?\/?>/, "")
+		
+		#puts "Found Lua block: #{lua_block}"
+		lua.run_lua_block(lua_block)
+	end
+	
+	# After our processing is done, replace document with whatever is in the Lua state
+	document = lua.get_document()
+	#puts document
+	
+	return document
+end
+
 class SerpicoLua
-	def initialize(doc)
+	def initialize(doc, report_xml)
 		# Start the Lua engine
 		@state = Lua::State.new()
 		
@@ -19,12 +52,21 @@ class SerpicoLua
 		# Build a nokogiri document from the doc we passed in so we only parse it once
 		@noko = Nokogiri::XML(@state.document)
 		
+		# Store report XML
+		report_xml = report_xml
+		
+		# Build the nokogiri doc for the report XML too
+		@noko_report = Nokogiri::XML(report_xml)
+		
 		# Now set up our tables so that we can call stuff
 		create_lua_tables()
 	end
 
 	def run_lua_block(lua_block)
 		# Clean up stupid stuff like smart quotes and double-dashes
+		
+		puts "Calling Lua block"
+		
 		clean_block = lua_block
 		clean_block.gsub!("“", "\"")
 		clean_block.gsub!("”", "\"")
@@ -39,14 +81,10 @@ class SerpicoLua
 	end
 	
 	def create_lua_tables()
-		@state.__load_stdlib :math, :string, :table	# Only load bare minimum tables
-		#@state.__eval "print('hello, world')" # launch some Lua code
+		#@state.__load_stdlib :math, :string, :table	# Only load bare minimum tables
+		@state.__load_stdlib :all
 		
 		# Create tables we can call from lua to do stuff
-		create_label_table()
-	end
-
-	def create_label_table()
 		@state.Label = 
 		{
 			# Label:Replace(labelname, value)
@@ -64,6 +102,24 @@ class SerpicoLua
 			# Row:BackColor(labelname, rgbstring)
 			'BackColor' => lambda { |this, labelname, rgbstring| lua_row_backcolor(this, labelname, rgbstring) }
 		}
+		@state.ReportContent = 
+		{
+			# ReportContent:GetShortCompanyName()
+			'GetShortCompanyName' => lambda { |this| lua_reportcontent_getshortcompanyname(this) }
+		}
+		@state.Findings = 
+		{
+			# Findings:GetAllFindings() - returns a table of Findings
+			'GetAllFindings' => lambda { |this| Lua.multret(lua_findings_getallfindings(this)) }
+		}
+			
+		@state.Finding = 
+		{
+			# Finding:GetTitle(finding)
+			'GetTitle' => lambda { |this| return lua_finding_gettitle(this) },
+			'GetID' => lambda { |this| return lua_finding_getid(this) }
+		}
+		
 	end
 
 	# Gets the label complete with delimiters
@@ -71,6 +127,7 @@ class SerpicoLua
 		return "¤#{label}¤"
 	end
 
+	#### Label functions ####
 	# Replaces an entire label with another value. This destroys the label, so be careful when you call it!
 	def lua_label_replace(this, labelname, value)
 		full_label = get_full_label(labelname)
@@ -129,7 +186,7 @@ class SerpicoLua
 			end
 			
 			#puts "Content: #{@noko}\n\n"
-			#@state.document = @noko.to_s()
+			@state.document = @noko.to_s()
 							
 			#parent = text_node.xpath("..", 'w' => $W_URI)
 			#puts "My parent is #{parent}"
@@ -138,7 +195,7 @@ class SerpicoLua
 		@state.document = @state.document.gsub!(/#{full_label}/, "<w:color w:val=\"#{rgbstring}\"/>#{full_label}")
 	end
 			
-	
+	#### Cell functions ####
 	def lua_cell_backcolor(this, labelname, rgbstring)
 		full_label = get_full_label(labelname)
 		
@@ -156,10 +213,11 @@ class SerpicoLua
 			end
 			
 			#puts "Content: #{@noko}\n\n"
-			#@state.document = @noko.to_s()
+			@state.document = @noko.to_s()
 		end
 	end
 	
+	#### Row functions ####
 	def lua_row_backcolor(this, labelname, rgbstring)
 		full_label = get_full_label(labelname)
 		
@@ -167,22 +225,82 @@ class SerpicoLua
 			puts "Found #{row_node}"
 			cell_nodes = row_node.xpath("../../../../w:tc", 'w' => $W_URI)
 			cell_nodes.each do |cell_node|
-				puts "node"
+				#puts "node"
 				shading_node = cell_node.xpath("./w:tcPr/w:shd", 'w' => $W_URI)
 				if (shading_node.empty?)
-					puts "No shading node"
+					#puts "No shading node"
 					prop_node = cell_node.xpath("../../../w:tcPr", 'w' => $W_URI)
 					#<w:shd w:fill="FF0000" w:val="clear"/>
 					prop_node.add_child(Nokogiri::XML::Node.new("shd w:fill=\"#{rgbstring}\" v:val=\"clear\"", @noko))
 				else
-					puts "Found shading node"
+					#puts "Found shading node"
 					shading_node = shading_node.first
 					shading_node["w:fill"] = rgbstring
 				end
 			end
 			
-			puts "Content: #{@noko}\n\n"
+			#puts "Content: #{@noko}\n\n"
 			@state.document = @noko.to_s()
 		end
 	end
+	
+	#### ReportContent functions ####
+	def lua_reportcontent_getshortcompanyname(this)
+		return @noko_report.xpath("/report/reports/short_company_name").first.content
+	end
+	
+	#### Findings functions ####
+	
+	# Returns a table of Finding(s)
+	def lua_findings_getallfindings(this)
+		puts "GetAllFindings()"
+		output = []
+		findings = @noko_report.xpath("/report/findings_list/findings")
+		findings.each do |finding|
+			# Create a table
+			#puts "Creating finding table"
+			table = {}
+			
+			# Functions
+			table["GetTitle"] = lambda { |table| lua_finding_gettitle(table) }
+			table["GetID"] = lambda { |table| lua_finding_getid(table) }
+			
+			# Attributes
+			table["id"] = finding.xpath("id").first.content
+			table["title"] = finding.xpath("title").first.content
+			output << table
+		end
+		
+		return output
+	end
+	
+	#### Finding functions ####
+	def lua_finding_gettitle(this)
+		#puts "GetTitle returning #{this["title"]}"
+		return this["title"]
+	end
+	
+	def lua_finding_getid(this)
+		#puts "GetTitle returning #{this["title"]}"
+		return this["id"]
+	end
+	
 end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

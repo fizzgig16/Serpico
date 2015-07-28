@@ -19,38 +19,6 @@ class ReportingError < RuntimeError
   end
 end
 
-def run_lua(document)
-	###############################
-	# « - begin Lua block
-	# » - end Lua block
-	
-	# Find any labels we might need later
-	build_label_array(document)
-	
-	lua = SerpicoLua.new(document)
-		
-	#puts "Doc before: #{document}"
-	
-	document.scan(/«(.*?)»/).each do |lua_block|
-		lua_block = lua_block[0]	# Only get the capture group
-		
-		# Replace paragraph ends with newlines
-		lua_block.gsub!(/<\/w:p>/, "\n")
-		
-		# Strip Word markup
-		lua_block.gsub!(/<\/?w:.*?\/?>/, "")
-		
-		#puts "Found Lua block: #{lua_block}"
-		lua.run_lua_block(lua_block)
-	end
-	
-	# After our processing is done, replace document with whatever is in the Lua state
-	document = lua.get_document()
-	#puts document
-	
-	return document
-end
-
 def build_label_array(document)
 	###############################
 	# ¤ - label (used for doing things like altering fonts, cells, etc.)
@@ -111,7 +79,7 @@ def generate_xslt(docx)
 
 	for_iffies = []
 	
-	document = run_lua(document)
+	#document = run_lua(document)
 ###########################
 
 # Ω - used as a normal substituion variable

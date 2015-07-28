@@ -14,6 +14,7 @@ require './helpers/sinatra_ssl'
 require './helpers/xslt_generation'
 require './helpers/vuln_importer'
 require './helpers/asciidoc_exporter'
+require './helpers/lua_parser.rb'
 
 # import config options
 config_options = JSON.parse(File.read('./config.json'))
@@ -1865,8 +1866,14 @@ get '/report/:id/generate' do
 
 	xslt_elem = Xslt.first(:report_type => @report.report_type)
 
+	# Get the raw template data
+	template_data = File.read(xslt_elem.xslt_location)
+	run_lua(template_data.force_encoding("ASCII-8BIT"), report_xml)
+
     # Push the finding from XML to XSLT
-    xslt = Nokogiri::XSLT(File.read(xslt_elem.xslt_location))
+    xslt = Nokogiri::XSLT(template_data)
+
+	#puts("report_xml: #{report_xml}")
 
     docx_xml = xslt.transform(Nokogiri::XML(report_xml))
 
