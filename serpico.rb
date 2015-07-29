@@ -1868,7 +1868,6 @@ get '/report/:id/generate' do
 
 	# Get the raw template data
 	template_data = File.read(xslt_elem.xslt_location)
-	run_lua(template_data.force_encoding("ASCII-8BIT"), report_xml)
 
     # Push the finding from XML to XSLT
     xslt = Nokogiri::XSLT(template_data)
@@ -1877,6 +1876,10 @@ get '/report/:id/generate' do
 
     docx_xml = xslt.transform(Nokogiri::XML(report_xml))
 
+	docx_xml = run_lua(docx_xml, report_xml)
+
+	#puts "Doc: #{docx_xml.to_s()}\n\n"
+	
     # We use a temporary file with a random name
     rand_file = "./tmp/#{rand(36**12).to_s(36)}.docx"
 
@@ -1937,6 +1940,8 @@ get '/report/:id/generate' do
 		docx = docx_xml.to_s
 	end
 	#### END IMAGE INSERT CODE
+
+	puts "Final docx: #{docx}\n\n"
 
     # Create the docx, would be better to create the zip file in memory and return to the user
     Zip::Archive.open(rand_file, Zip::CREATE) do |zipfile|

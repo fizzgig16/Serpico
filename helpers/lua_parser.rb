@@ -5,9 +5,12 @@
 require 'rubygems'
 require 'nokogiri'
 require 'rlua'
+require 'cgi'
 
 $W_URI = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-
+# o thing: &#xA4;
+# Start lua: &#xAB;
+# End Lua: &#xBB;
 def run_lua(document, report_xml)
 	###############################
 	# « - begin Lua block
@@ -20,25 +23,32 @@ def run_lua(document, report_xml)
 		
 	#puts "Doc before: #{document}\n\n"
 	#puts "Report: #{report_xml}\n\n"
-	
-	document.scan(/«(.*?)»/).each do |lua_block|
+	doc_text = CGI::unescapeHTML(document.to_s()).force_encoding("ASCII-8BIT")
+	puts doc_text
+	doc_text.scan(/«(.*?)»/m).each do |lua_block|
 		lua_block = lua_block[0]	# Only get the capture group
 		
-		# Replace paragraph ends with newlines
-		lua_block.gsub!(/<\/w:p>/, "\n")
+		#puts "Before: #{lua_block}"
 		
-		# Strip Word markup
-		lua_block.gsub!(/<\/?w:.*?\/?>/, "")
+		# Replace paragraph ends with newlines. This is a trick for our regex below
+		lua_block.gsub!(/<\/w:p>/, "<w:t>\\n</w:t>")
 		
-		#puts "Found Lua block: #{lua_block}"
-		lua.run_lua_block(lua_block)
+		# Grab <w:t> blocks and piece them together
+		code = ""
+		lua_block.scan(/<w:t[^\w]?.*?>(.*?)<\/w:t>/).each do |text_block|
+			code = code + text_block[0].to_s().gsub(/\\n/, "\n")
+		end
+		
+		code = code.force_encoding("ASCII-8BIT")
+		#puts "Found Lua block: #{code}"
+		lua.run_lua_block(code)
 	end
 	
 	# After our processing is done, replace document with whatever is in the Lua state
-	document = lua.get_document()
+	doc_text = lua.get_document()
 	#puts document
 	
-	return document
+	return lua.get_nokogiri_document()
 end
 
 class SerpicoLua
@@ -47,10 +57,10 @@ class SerpicoLua
 		@state = Lua::State.new()
 		
 		# Store document in state so we can work with it
-		@state.document = doc
+		#@state.document = doc
 		
 		# Build a nokogiri document from the doc we passed in so we only parse it once
-		@noko = Nokogiri::XML(@state.document)
+		@noko = doc
 		
 		# Store report XML
 		report_xml = report_xml
@@ -65,7 +75,7 @@ class SerpicoLua
 	def run_lua_block(lua_block)
 		# Clean up stupid stuff like smart quotes and double-dashes
 		
-		puts "Calling Lua block"
+		#puts "Calling Lua block"
 		
 		clean_block = lua_block
 		clean_block.gsub!("“", "\"")
@@ -74,10 +84,15 @@ class SerpicoLua
 		
 		# Run ze code
 		@state.__eval(clean_block)
+		
 	end
 
 	def get_document()
-		return @state.document
+		return ""
+	end
+	
+	def get_nokogiri_document()
+		return @noko
 	end
 	
 	def create_lua_tables()
@@ -113,7 +128,6 @@ class SerpicoLua
 			'GetAllFindings' => lambda { |this| lua_findings_getallfindings(this) }
 		}
 			
-
 		@state.Finding = 
 		{
 			# Finding:GetTitle(finding)
@@ -137,8 +151,11 @@ class SerpicoLua
 	#### Label functions ####
 	# Replaces an entire label with another value. This destroys the label, so be careful when you call it!
 	def lua_label_replace(this, labelname, value)
+		puts "Called replace"
 		full_label = get_full_label(labelname)
-		@state.document = @state.document.gsub!(/#{full_label}/, value)
+		@noko.xpath('//text()').each do |node|
+			node.content = node.content.force_encoding("ASCII-8BIT").gsub(/#{full_label}/, value)
+		end
 	end
 
 	# Sets the foreground color of the label text
@@ -191,15 +208,7 @@ class SerpicoLua
 					end
 				end
 			end
-			
-			#puts "Content: #{@noko}\n\n"
-			@state.document = @noko.to_s()
-							
-			#parent = text_node.xpath("..", 'w' => $W_URI)
-			#puts "My parent is #{parent}"
 		end
-		
-		@state.document = @state.document.gsub!(/#{full_label}/, "<w:color w:val=\"#{rgbstring}\"/>#{full_label}")
 	end
 			
 	#### Cell functions ####
@@ -220,7 +229,7 @@ class SerpicoLua
 			end
 			
 			#puts "Content: #{@noko}\n\n"
-			@state.document = @noko.to_s()
+			#@state.document = @noko.to_s()
 		end
 	end
 	
@@ -229,10 +238,9 @@ class SerpicoLua
 		full_label = get_full_label(labelname)
 		
 		@noko.xpath("//w:tr/w:tc/w:p/w:r/w:t[contains(text(), \"#{full_label}\")]", 'w' => $W_URI).each do |row_node|
-			puts "Found #{row_node}"
+			#puts "Found #{row_node}"
 			cell_nodes = row_node.xpath("../../../../w:tc", 'w' => $W_URI)
 			cell_nodes.each do |cell_node|
-				#puts "node"
 				shading_node = cell_node.xpath("./w:tcPr/w:shd", 'w' => $W_URI)
 				if (shading_node.empty?)
 					#puts "No shading node"
@@ -247,7 +255,7 @@ class SerpicoLua
 			end
 			
 			#puts "Content: #{@noko}\n\n"
-			@state.document = @noko.to_s()
+			#@state.document = @noko.to_s()
 		end
 	end
 	
@@ -301,13 +309,13 @@ class SerpicoLua
 		#body_row_count = body_row_count.to_i()
 
 		# Creates a table in word where the code is
-		total_width = 9683
+		total_width = 9681
 
-		table = @noko.root.add_child(Nokogiri::XML::Node.new("tbl", @noko))
-		table_params = table.add_child(Nokogiri::XML::Node.new("tblPr", @noko))
+		table = @noko.xpath("//w:body").first.add_child(Nokogiri::XML::Node.new("w:tbl", @noko))
+		table_params = table.add_child(Nokogiri::XML::Node.new("w:tblPr", @noko))
 		table_params.add_child(Nokogiri::XML::Node.new("tblW w:type=\"dxa\" w:w=\"#{total_width}\"", @noko))
 		table_params.add_child(Nokogiri::XML::Node.new("jc w:val=\"left\"", @noko))
-		table_params.add_child(Nokogiri::XML::Node.new("tblW w:type=\"dxa\" w:w=\"55\"", @noko))
+		table_params.add_child(Nokogiri::XML::Node.new("tblInd w:type=\"dxa\" w:w=\"55\"", @noko))
 		table_borders = table_params.add_child(Nokogiri::XML::Node.new("tblBorders", @noko))
 		table_borders.add_child(Nokogiri::XML::Node.new("top w:color=\"000000\" w:space=\"0\" w:sz=\"2\" w:val=\"single\"", @noko))
 		table_borders.add_child(Nokogiri::XML::Node.new("left w:color=\"000000\" w:space=\"0\" w:sz=\"2\" w:val=\"single\"", @noko))
@@ -323,26 +331,27 @@ class SerpicoLua
 		table_grid = table.add_child(Nokogiri::XML::Node.new("tblGrid", @noko))
 
 		for cols in 1..columns
-			table_grid.add_child(Nokogiri::XML::Node.new("gridCol w:w=\"#{total_width / columns}\"", @noko))
+			table_grid.add_child(Nokogiri::XML::Node.new("gridCol w:w=\"#{(total_width / columns).floor - 18}\"", @noko))
 		end
 	
 		# Now the rows, header first
 		for header_rows in 1..header_row_count
 			header_row = table.add_child(Nokogiri::XML::Node.new("tr", @noko))
 			header_props = header_row.add_child(Nokogiri::XML::Node.new("trPr", @noko))
+			header_props.add_child(Nokogiri::XML::Node.new("tblHeader w:val=\"true\"", @noko))
 			header_props.add_child(Nokogiri::XML::Node.new("cantSplit w:val=\"false\"", @noko))
 			
 			# Add the cells
 			for cols in 1..columns
 				header_cell = header_row.add_child(Nokogiri::XML::Node.new("tc", @noko))
 				header_cell_props = header_cell.add_child(Nokogiri::XML::Node.new("tcPr", @noko))
-				header_cell_props.add_child(Nokogiri::XML::Node.new("tcW w:type=\"dxa\" w:w=\"#{total_width / columns}\"", @noko))
+				header_cell_props.add_child(Nokogiri::XML::Node.new("tcW w:type=\"dxa\" w:w=\"#{(total_width / columns).floor - 18}\"", @noko))
 				header_cell_borders = header_cell_props.add_child(Nokogiri::XML::Node.new("tcBorders", @noko))
 				header_cell_borders.add_child(Nokogiri::XML::Node.new("top w:color=\"000000\" w:space=\"0\" w:sz=\"2\" w:val=\"single\"", @noko))
 				header_cell_borders.add_child(Nokogiri::XML::Node.new("left w:color=\"000000\" w:space=\"0\" w:sz=\"2\" w:val=\"single\"", @noko))
 				header_cell_borders.add_child(Nokogiri::XML::Node.new("bottom w:color=\"000000\" w:space=\"0\" w:sz=\"2\" w:val=\"single\"", @noko))
 				header_cell_borders.add_child(Nokogiri::XML::Node.new("right w:color=\"000000\" w:space=\"0\" w:sz=\"2\" w:val=\"single\"", @noko))
-				header_cell_props.add_child(Nokogiri::XML::Node.new("shd w:fill=\"000000\" w:val=\"clear\"", @noko))
+				header_cell_props.add_child(Nokogiri::XML::Node.new("shd w:fill=\"auto\" w:val=\"clear\"", @noko))
 				header_cell_margins = header_cell_props.add_child(Nokogiri::XML::Node.new("tcMar", @noko))
 				header_cell_margins.add_child(Nokogiri::XML::Node.new("left w:type=\"dxa\" w:w=\"55\"", @noko))
 				header_paragraph = header_cell.add_child(Nokogiri::XML::Node.new("p", @noko))
@@ -364,13 +373,13 @@ class SerpicoLua
 			for cols in 1..columns
 				body_cell = body_row.add_child(Nokogiri::XML::Node.new("tc", @noko))
 				body_cell_props = body_cell.add_child(Nokogiri::XML::Node.new("tcPr", @noko))
-				body_cell_props.add_child(Nokogiri::XML::Node.new("tcW w:type=\"dxa\" w:w=\"#{total_width / columns}\"", @noko))
+				body_cell_props.add_child(Nokogiri::XML::Node.new("tcW w:type=\"dxa\" w:w=\"#{(total_width / columns).floor - 18}\"", @noko))
 				body_cell_borders = body_cell_props.add_child(Nokogiri::XML::Node.new("tcBorders", @noko))
 				body_cell_borders.add_child(Nokogiri::XML::Node.new("top w:color=\"000000\" w:space=\"0\" w:sz=\"2\" w:val=\"single\"", @noko))
 				body_cell_borders.add_child(Nokogiri::XML::Node.new("left w:color=\"000000\" w:space=\"0\" w:sz=\"2\" w:val=\"single\"", @noko))
 				body_cell_borders.add_child(Nokogiri::XML::Node.new("bottom w:color=\"000000\" w:space=\"0\" w:sz=\"2\" w:val=\"single\"", @noko))
 				body_cell_borders.add_child(Nokogiri::XML::Node.new("right w:color=\"000000\" w:space=\"0\" w:sz=\"2\" w:val=\"single\"", @noko))
-				body_cell_props.add_child(Nokogiri::XML::Node.new("shd w:fill=\"000000\" w:val=\"clear\"", @noko))
+				body_cell_props.add_child(Nokogiri::XML::Node.new("shd w:fill=\"auto\" w:val=\"clear\"", @noko))
 				body_cell_margins = body_cell_props.add_child(Nokogiri::XML::Node.new("tcMar", @noko))
 				body_cell_margins.add_child(Nokogiri::XML::Node.new("left w:type=\"dxa\" w:w=\"55\"", @noko))
 				body_paragraph = body_cell.add_child(Nokogiri::XML::Node.new("p", @noko))
@@ -382,90 +391,10 @@ class SerpicoLua
 			end
 		end
 		
-		@state.document = @noko.to_s()
-		puts "Document: #{@state.document}\n\n"
+		#@state.document = @noko.to_s()
+		#puts "Document: #{@state.document}\n\n"
+		return 0
 	end
-	
-=begin
- <w:tr>
-	<w:trPr>
-		<w:cantSplit w:val="false"/>
-	</w:trPr>
-	<w:tc>
-		<w:tcPr>
-			<w:tcW w:type="dxa" w:w="3212"/>
-			<w:tcBorders>
-				<w:top w:color="000000" w:space="0" w:sz="2" w:val="single"/>
-				<w:left w:color="000000" w:space="0" w:sz="2" w:val="single"/>
-				<w:bottom w:color="000000" w:space="0" w:sz="2" w:val="single"/>
-				<w:right w:val="nil"/>
-			</w:tcBorders>
-			<w:shd w:fill="FFFF00" w:val="clear"/>
-			<w:tcMar>
-				<w:left w:type="dxa" w:w="54"/>
-			</w:tcMar>
-		</w:tcPr>
-		<w:p>
-			<w:pPr>
-				<w:pStyle w:val="style20"/>
-				<w:rPr/>
-			</w:pPr>
-			<w:r>
-				<w:rPr/>
-			</w:r>
-		</w:p>
-	</w:tc>
-	<w:tc>
-		<w:tcPr>
-			<w:tcW w:type="dxa" w:w="3213"/>
-			<w:tcBorders>
-				<w:top w:color="000000" w:space="0" w:sz="2" w:val="single"/>
-				<w:left w:color="000000" w:space="0" w:sz="2" w:val="single"/>
-				<w:bottom w:color="000000" w:space="0" w:sz="2" w:val="single"/>
-				<w:right w:val="nil"/>
-			</w:tcBorders>
-			<w:shd w:fill="FFFF00" w:val="clear"/>
-			<w:tcMar>
-				<w:left w:type="dxa" w:w="54"/>
-			</w:tcMar>
-		</w:tcPr>
-		<w:p>
-			<w:pPr>
-				<w:pStyle w:val="style20"/>
-				<w:rPr/>
-			</w:pPr>
-			<w:r>
-				<w:rPr/>
-			</w:r>
-		</w:p>
-	</w:tc>
-	<w:tc>
-		<w:tcPr>
-			<w:tcW w:type="dxa" w:w="3213"/>
-			<w:tcBorders>
-				<w:top w:color="000000" w:space="0" w:sz="2" w:val="single"/>
-				<w:left w:color="000000" w:space="0" w:sz="2" w:val="single"/>
-				<w:bottom w:color="000000" w:space="0" w:sz="2" w:val="single"/>
-				<w:right w:color="000000" w:space="0" w:sz="2" w:val="single"/>
-			</w:tcBorders>
-			<w:shd w:fill="FFFF00" w:val="clear"/>
-			<w:tcMar>
-				<w:left w:type="dxa" w:w="54"/>
-			</w:tcMar>
-		</w:tcPr>
-		<w:p>
-			<w:pPr>
-				<w:pStyle w:val="style20"/>
-				<w:rPr/>
-			</w:pPr>
-			<w:r>
-				<w:rPr/>
-				<w:t>Yellow row</w:t>
-			</w:r>
-		</w:p>
-	</w:tc>
-</w:tr>
-=end
 	
 
 end
