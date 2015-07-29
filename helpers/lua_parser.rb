@@ -310,8 +310,19 @@ class SerpicoLua
 
 		# Creates a table in word where the code is
 		total_width = 9681
+		table_id = rand(999999)
 
+		# This is the table we will pass back to Lua for future reference
+		result = {}
+		result["id"] = table_id
+		
 		table = @noko.xpath("//w:body").first.add_child(Nokogiri::XML::Node.new("w:tbl", @noko))
+		
+		# Add custom property to the table so we can find it later
+		table_custom_xml = table.add_child(Nokogiri::XML::Node.new("w:customXml", @noko))
+		table_custom_xml_props = table_custom_xml.add_child(Nokogiri::XML::Node.new("w:customXmlPr", @noko))
+		table_custom_xml_props.add_child(Nokogiri::XML::Node.new("w:attr w:name=\"serpico_table_id\" w:val=\"#{table_id}\"", @noko))
+		
 		table_params = table.add_child(Nokogiri::XML::Node.new("w:tblPr", @noko))
 		table_params.add_child(Nokogiri::XML::Node.new("tblW w:type=\"dxa\" w:w=\"#{total_width}\"", @noko))
 		table_params.add_child(Nokogiri::XML::Node.new("jc w:val=\"left\"", @noko))
@@ -335,8 +346,21 @@ class SerpicoLua
 		end
 	
 		# Now the rows, header first
+		result["header_rows"] = []
 		for header_rows in 1..header_row_count
+			# Add the header table to the results
+			header = {}
+			header["id"] = rand(999999)
+			header["index"] = header_rows
+			result["header_rows"] << header
+			
 			header_row = table.add_child(Nokogiri::XML::Node.new("tr", @noko))
+			
+			# Add custom property to the table so we can find it later
+			header_custom_xml = header_row.add_child(Nokogiri::XML::Node.new("w:customXml", @noko))
+			header_custom_xml_props = header_custom_xml.add_child(Nokogiri::XML::Node.new("w:customXmlPr", @noko))
+			header_custom_xml_props.add_child(Nokogiri::XML::Node.new("w:attr w:name=\"serpico_header_id\" w:val=\"#{header["id"]}\"", @noko))
+			
 			header_props = header_row.add_child(Nokogiri::XML::Node.new("trPr", @noko))
 			header_props.add_child(Nokogiri::XML::Node.new("tblHeader w:val=\"true\"", @noko))
 			header_props.add_child(Nokogiri::XML::Node.new("cantSplit w:val=\"false\"", @noko))
@@ -364,8 +388,21 @@ class SerpicoLua
 		end
 		
 		# And the body rows
+		result["body_rows"] = []
 		for body_rows in 1..body_row_count
+			# Add the header table to the results
+			body = {}
+			body["id"] = rand(999999)
+			body["index"] = body_rows
+			result["body_rows"] << body
+			
 			body_row = table.add_child(Nokogiri::XML::Node.new("tr", @noko))
+			
+			# Add custom property to the table so we can find it later
+			body_custom_xml = body_row.add_child(Nokogiri::XML::Node.new("w:customXml", @noko))
+			body_custom_xml_props = body_custom_xml.add_child(Nokogiri::XML::Node.new("w:customXmlPr", @noko))
+			body_custom_xml_props.add_child(Nokogiri::XML::Node.new("w:attr w:name=\"serpico_body_row_id\" w:val=\"#{body["id"]}\"", @noko))
+			
 			body_props = body_row.add_child(Nokogiri::XML::Node.new("trPr", @noko))
 			body_props.add_child(Nokogiri::XML::Node.new("cantSplit w:val=\"false\"", @noko))
 			
@@ -391,9 +428,7 @@ class SerpicoLua
 			end
 		end
 		
-		#@state.document = @noko.to_s()
-		#puts "Document: #{@state.document}\n\n"
-		return 0
+		return result
 	end
 	
 
