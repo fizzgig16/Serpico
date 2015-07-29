@@ -1,5 +1,14 @@
 #!/usr/bin/env ruby
 
-require './helpers/xslt_generation'
+require 'zipruby'
+require './helpers/lua_parser'
 
-generate_xslt('testdoc.docx')
+document = ""
+Zip::Archive.open("templates/testdoc.docx", Zip::CREATE) do |zipfile|
+		# read in document.xml and store as var
+		zipfile.fopen("word/document.xml") do |f|
+			document = f.read # read entry content
+		end
+	end
+
+run_lua(document, "")

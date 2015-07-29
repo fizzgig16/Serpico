@@ -110,14 +110,21 @@ class SerpicoLua
 		@state.Findings = 
 		{
 			# Findings:GetAllFindings() - returns a table of Findings
-			'GetAllFindings' => lambda { |this| Lua.multret(lua_findings_getallfindings(this)) }
+			'GetAllFindings' => lambda { |this| lua_findings_getallfindings(this) }
 		}
 			
+
 		@state.Finding = 
 		{
 			# Finding:GetTitle(finding)
 			'GetTitle' => lambda { |this| return lua_finding_gettitle(this) },
 			'GetID' => lambda { |this| return lua_finding_getid(this) }
+		}
+
+		@state.WordTable =
+		{
+			# WordTable:Create(columns, header_row_count, body_row_count)
+			'Create' => lambda { |this, columns, header_row_count, body_row_count| lua_wordtable_create(this, columns, header_row_count, body_row_count) }
 		}
 		
 	end
@@ -205,7 +212,7 @@ class SerpicoLua
 			if (shading_node.empty?)
 				prop_node = cell_node.xpath("../../../w:tcPr", 'w' => $W_URI)
 				#<w:shd w:fill="FF0000" w:val="clear"/>
-				prop_node.add_child(Nokogiri::XML::Node.new("shd w:fill=\"#{rgbstring}\" v:val=\"clear\"", @noko))
+				prop_node.add_child(Nokogiri::XML::Node.new("shd w:fill=\"#{rgbstring}\" w:val=\"clear\"", @noko))
 			else
 				#puts "Found shading node"
 				shading_node = shading_node.first
@@ -231,7 +238,7 @@ class SerpicoLua
 					#puts "No shading node"
 					prop_node = cell_node.xpath("../../../w:tcPr", 'w' => $W_URI)
 					#<w:shd w:fill="FF0000" w:val="clear"/>
-					prop_node.add_child(Nokogiri::XML::Node.new("shd w:fill=\"#{rgbstring}\" v:val=\"clear\"", @noko))
+					prop_node.add_child(Nokogiri::XML::Node.new("shd w:fill=\"#{rgbstring}\" w:val=\"clear\"", @noko))
 				else
 					#puts "Found shading node"
 					shading_node = shading_node.first
@@ -253,7 +260,7 @@ class SerpicoLua
 	
 	# Returns a table of Finding(s)
 	def lua_findings_getallfindings(this)
-		puts "GetAllFindings()"
+		#puts "GetAllFindings()"
 		output = []
 		findings = @noko_report.xpath("/report/findings_list/findings")
 		findings.each do |finding|
@@ -285,6 +292,182 @@ class SerpicoLua
 		return this["id"]
 	end
 	
+	#### WordTable functions ####
+	def lua_wordtable_create(this, columns, header_row_count, body_row_count)
+
+		# Convert strings to ints
+		#columns = columns.to_i()
+		#header_row_count = header_row_count.to_i()
+		#body_row_count = body_row_count.to_i()
+
+		# Creates a table in word where the code is
+		total_width = 9683
+
+		table = @noko.root.add_child(Nokogiri::XML::Node.new("tbl", @noko))
+		table_params = table.add_child(Nokogiri::XML::Node.new("tblPr", @noko))
+		table_params.add_child(Nokogiri::XML::Node.new("tblW w:type=\"dxa\" w:w=\"#{total_width}\"", @noko))
+		table_params.add_child(Nokogiri::XML::Node.new("jc w:val=\"left\"", @noko))
+		table_params.add_child(Nokogiri::XML::Node.new("tblW w:type=\"dxa\" w:w=\"55\"", @noko))
+		table_borders = table_params.add_child(Nokogiri::XML::Node.new("tblBorders", @noko))
+		table_borders.add_child(Nokogiri::XML::Node.new("top w:color=\"000000\" w:space=\"0\" w:sz=\"2\" w:val=\"single\"", @noko))
+		table_borders.add_child(Nokogiri::XML::Node.new("left w:color=\"000000\" w:space=\"0\" w:sz=\"2\" w:val=\"single\"", @noko))
+		table_borders.add_child(Nokogiri::XML::Node.new("bottom w:color=\"000000\" w:space=\"0\" w:sz=\"2\" w:val=\"single\"", @noko))
+		table_borders.add_child(Nokogiri::XML::Node.new("insideH w:color=\"000000\" w:space=\"0\" w:sz=\"2\" w:val=\"single\"", @noko))
+		table_borders.add_child(Nokogiri::XML::Node.new("right w:val=\"nil\"", @noko))
+		table_borders.add_child(Nokogiri::XML::Node.new("insideV w:val=\"nil\"", @noko))
+		cell_margins = table_params.add_child(Nokogiri::XML::Node.new("tblCellMar", @noko))
+		cell_margins.add_child(Nokogiri::XML::Node.new("top w:type=\"dxa\" w:w=\"55\"", @noko))
+		cell_margins.add_child(Nokogiri::XML::Node.new("left w:type=\"dxa\" w:w=\"55\"", @noko))
+		cell_margins.add_child(Nokogiri::XML::Node.new("bottom w:type=\"dxa\" w:w=\"55\"", @noko))
+		cell_margins.add_child(Nokogiri::XML::Node.new("right w:type=\"dxa\" w:w=\"55\"", @noko))
+		table_grid = table.add_child(Nokogiri::XML::Node.new("tblGrid", @noko))
+
+		for cols in 1..columns
+			table_grid.add_child(Nokogiri::XML::Node.new("gridCol w:w=\"#{total_width / columns}\"", @noko))
+		end
+	
+		# Now the rows, header first
+		for header_rows in 1..header_row_count
+			header_row = table.add_child(Nokogiri::XML::Node.new("tr", @noko))
+			header_props = header_row.add_child(Nokogiri::XML::Node.new("trPr", @noko))
+			header_props.add_child(Nokogiri::XML::Node.new("cantSplit w:val=\"false\"", @noko))
+			
+			# Add the cells
+			for cols in 1..columns
+				header_cell = header_row.add_child(Nokogiri::XML::Node.new("tc", @noko))
+				header_cell_props = header_cell.add_child(Nokogiri::XML::Node.new("tcPr", @noko))
+				header_cell_props.add_child(Nokogiri::XML::Node.new("tcW w:type=\"dxa\" w:w=\"#{total_width / columns}\"", @noko))
+				header_cell_borders = header_cell_props.add_child(Nokogiri::XML::Node.new("tcBorders", @noko))
+				header_cell_borders.add_child(Nokogiri::XML::Node.new("top w:color=\"000000\" w:space=\"0\" w:sz=\"2\" w:val=\"single\"", @noko))
+				header_cell_borders.add_child(Nokogiri::XML::Node.new("left w:color=\"000000\" w:space=\"0\" w:sz=\"2\" w:val=\"single\"", @noko))
+				header_cell_borders.add_child(Nokogiri::XML::Node.new("bottom w:color=\"000000\" w:space=\"0\" w:sz=\"2\" w:val=\"single\"", @noko))
+				header_cell_borders.add_child(Nokogiri::XML::Node.new("right w:color=\"000000\" w:space=\"0\" w:sz=\"2\" w:val=\"single\"", @noko))
+				header_cell_props.add_child(Nokogiri::XML::Node.new("shd w:fill=\"000000\" w:val=\"clear\"", @noko))
+				header_cell_margins = header_cell_props.add_child(Nokogiri::XML::Node.new("tcMar", @noko))
+				header_cell_margins.add_child(Nokogiri::XML::Node.new("left w:type=\"dxa\" w:w=\"55\"", @noko))
+				header_paragraph = header_cell.add_child(Nokogiri::XML::Node.new("p", @noko))
+				header_paragraph_props = header_paragraph.add_child(Nokogiri::XML::Node.new("pPr", @noko))
+				header_paragraph_props.add_child(Nokogiri::XML::Node.new("pStyle w:val=\"style20\"", @noko))
+				header_paragraph_props.add_child(Nokogiri::XML::Node.new("rPr", @noko))
+				header_paragraph_run = header_paragraph.add_child(Nokogiri::XML::Node.new("r", @noko))
+				header_paragraph_run.add_child(Nokogiri::XML::Node.new("rPr", @noko))
+			end
+		end
+		
+		# And the body rows
+		for body_rows in 1..body_row_count
+			body_row = table.add_child(Nokogiri::XML::Node.new("tr", @noko))
+			body_props = body_row.add_child(Nokogiri::XML::Node.new("trPr", @noko))
+			body_props.add_child(Nokogiri::XML::Node.new("cantSplit w:val=\"false\"", @noko))
+			
+			# Add the cells
+			for cols in 1..columns
+				body_cell = body_row.add_child(Nokogiri::XML::Node.new("tc", @noko))
+				body_cell_props = body_cell.add_child(Nokogiri::XML::Node.new("tcPr", @noko))
+				body_cell_props.add_child(Nokogiri::XML::Node.new("tcW w:type=\"dxa\" w:w=\"#{total_width / columns}\"", @noko))
+				body_cell_borders = body_cell_props.add_child(Nokogiri::XML::Node.new("tcBorders", @noko))
+				body_cell_borders.add_child(Nokogiri::XML::Node.new("top w:color=\"000000\" w:space=\"0\" w:sz=\"2\" w:val=\"single\"", @noko))
+				body_cell_borders.add_child(Nokogiri::XML::Node.new("left w:color=\"000000\" w:space=\"0\" w:sz=\"2\" w:val=\"single\"", @noko))
+				body_cell_borders.add_child(Nokogiri::XML::Node.new("bottom w:color=\"000000\" w:space=\"0\" w:sz=\"2\" w:val=\"single\"", @noko))
+				body_cell_borders.add_child(Nokogiri::XML::Node.new("right w:color=\"000000\" w:space=\"0\" w:sz=\"2\" w:val=\"single\"", @noko))
+				body_cell_props.add_child(Nokogiri::XML::Node.new("shd w:fill=\"000000\" w:val=\"clear\"", @noko))
+				body_cell_margins = body_cell_props.add_child(Nokogiri::XML::Node.new("tcMar", @noko))
+				body_cell_margins.add_child(Nokogiri::XML::Node.new("left w:type=\"dxa\" w:w=\"55\"", @noko))
+				body_paragraph = body_cell.add_child(Nokogiri::XML::Node.new("p", @noko))
+				body_paragraph_props = body_paragraph.add_child(Nokogiri::XML::Node.new("pPr", @noko))
+				body_paragraph_props.add_child(Nokogiri::XML::Node.new("pStyle w:val=\"style20\"", @noko))
+				body_paragraph_props.add_child(Nokogiri::XML::Node.new("rPr", @noko))
+				body_paragraph_run = body_paragraph.add_child(Nokogiri::XML::Node.new("r", @noko))
+				body_paragraph_run.add_child(Nokogiri::XML::Node.new("rPr", @noko))
+			end
+		end
+		
+		@state.document = @noko.to_s()
+		puts "Document: #{@state.document}\n\n"
+	end
+	
+=begin
+ <w:tr>
+	<w:trPr>
+		<w:cantSplit w:val="false"/>
+	</w:trPr>
+	<w:tc>
+		<w:tcPr>
+			<w:tcW w:type="dxa" w:w="3212"/>
+			<w:tcBorders>
+				<w:top w:color="000000" w:space="0" w:sz="2" w:val="single"/>
+				<w:left w:color="000000" w:space="0" w:sz="2" w:val="single"/>
+				<w:bottom w:color="000000" w:space="0" w:sz="2" w:val="single"/>
+				<w:right w:val="nil"/>
+			</w:tcBorders>
+			<w:shd w:fill="FFFF00" w:val="clear"/>
+			<w:tcMar>
+				<w:left w:type="dxa" w:w="54"/>
+			</w:tcMar>
+		</w:tcPr>
+		<w:p>
+			<w:pPr>
+				<w:pStyle w:val="style20"/>
+				<w:rPr/>
+			</w:pPr>
+			<w:r>
+				<w:rPr/>
+			</w:r>
+		</w:p>
+	</w:tc>
+	<w:tc>
+		<w:tcPr>
+			<w:tcW w:type="dxa" w:w="3213"/>
+			<w:tcBorders>
+				<w:top w:color="000000" w:space="0" w:sz="2" w:val="single"/>
+				<w:left w:color="000000" w:space="0" w:sz="2" w:val="single"/>
+				<w:bottom w:color="000000" w:space="0" w:sz="2" w:val="single"/>
+				<w:right w:val="nil"/>
+			</w:tcBorders>
+			<w:shd w:fill="FFFF00" w:val="clear"/>
+			<w:tcMar>
+				<w:left w:type="dxa" w:w="54"/>
+			</w:tcMar>
+		</w:tcPr>
+		<w:p>
+			<w:pPr>
+				<w:pStyle w:val="style20"/>
+				<w:rPr/>
+			</w:pPr>
+			<w:r>
+				<w:rPr/>
+			</w:r>
+		</w:p>
+	</w:tc>
+	<w:tc>
+		<w:tcPr>
+			<w:tcW w:type="dxa" w:w="3213"/>
+			<w:tcBorders>
+				<w:top w:color="000000" w:space="0" w:sz="2" w:val="single"/>
+				<w:left w:color="000000" w:space="0" w:sz="2" w:val="single"/>
+				<w:bottom w:color="000000" w:space="0" w:sz="2" w:val="single"/>
+				<w:right w:color="000000" w:space="0" w:sz="2" w:val="single"/>
+			</w:tcBorders>
+			<w:shd w:fill="FFFF00" w:val="clear"/>
+			<w:tcMar>
+				<w:left w:type="dxa" w:w="54"/>
+			</w:tcMar>
+		</w:tcPr>
+		<w:p>
+			<w:pPr>
+				<w:pStyle w:val="style20"/>
+				<w:rPr/>
+			</w:pPr>
+			<w:r>
+				<w:rPr/>
+				<w:t>Yellow row</w:t>
+			</w:r>
+		</w:p>
+	</w:tc>
+</w:tr>
+=end
+	
+
 end
 
 
