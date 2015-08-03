@@ -1941,7 +1941,7 @@ get '/report/:id/generate' do
 	end
 	#### END IMAGE INSERT CODE
 
-	puts "Final docx: #{docx}\n\n"
+	#puts "Final docx: #{docx}\n\n"
 
     # Create the docx, would be better to create the zip file in memory and return to the user
     Zip::Archive.open(rand_file, Zip::CREATE) do |zipfile|

@@ -24,7 +24,7 @@ def run_lua(document, report_xml)
 	#puts "Doc before: #{document}\n\n"
 	#puts "Report: #{report_xml}\n\n"
 	doc_text = CGI::unescapeHTML(document.to_s()).force_encoding("ASCII-8BIT")
-	puts doc_text
+	#puts doc_text
 	doc_text.scan(/«(.*?)»/m).each do |lua_block|
 		lua_block = lua_block[0]	# Only get the capture group
 		
@@ -304,13 +304,13 @@ class SerpicoLua
 	def lua_wordtable_create(this, columns, header_row_count, body_row_count)
 
 		# Convert strings to ints
-		#columns = columns.to_i()
-		#header_row_count = header_row_count.to_i()
-		#body_row_count = body_row_count.to_i()
+		columns = columns.to_i()
+		header_row_count = header_row_count.to_i()
+		body_row_count = body_row_count.to_i()
 
 		# Creates a table in word where the code is
 		total_width = 9681
-		table_id = rand(999999)
+		table_id = rand(999999).to_s()
 
 		# This is the table we will pass back to Lua for future reference
 		result = {}
@@ -319,9 +319,7 @@ class SerpicoLua
 		table = @noko.xpath("//w:body").first.add_child(Nokogiri::XML::Node.new("w:tbl", @noko))
 		
 		# Add custom property to the table so we can find it later
-		table_custom_xml = table.add_child(Nokogiri::XML::Node.new("w:customXml", @noko))
-		table_custom_xml_props = table_custom_xml.add_child(Nokogiri::XML::Node.new("w:customXmlPr", @noko))
-		table_custom_xml_props.add_child(Nokogiri::XML::Node.new("w:attr w:name=\"serpico_table_id\" w:val=\"#{table_id}\"", @noko))
+		table["w:rsidR"] = table_id # WARNING: this is technically not valid, as the DTD does not define such an attribute, but it seems to not crash anything. It also means we can't search it directly
 		
 		table_params = table.add_child(Nokogiri::XML::Node.new("w:tblPr", @noko))
 		table_params.add_child(Nokogiri::XML::Node.new("tblW w:type=\"dxa\" w:w=\"#{total_width}\"", @noko))
@@ -347,19 +345,19 @@ class SerpicoLua
 	
 		# Now the rows, header first
 		result["header_rows"] = []
+		#puts "Have #{header_row_count} headers"
+		
 		for header_rows in 1..header_row_count
 			# Add the header table to the results
 			header = {}
-			header["id"] = rand(999999)
+			header["id"] = rand(999999).to_s()
 			header["index"] = header_rows
 			result["header_rows"] << header
 			
 			header_row = table.add_child(Nokogiri::XML::Node.new("tr", @noko))
 			
 			# Add custom property to the table so we can find it later
-			header_custom_xml = header_row.add_child(Nokogiri::XML::Node.new("w:customXml", @noko))
-			header_custom_xml_props = header_custom_xml.add_child(Nokogiri::XML::Node.new("w:customXmlPr", @noko))
-			header_custom_xml_props.add_child(Nokogiri::XML::Node.new("w:attr w:name=\"serpico_header_id\" w:val=\"#{header["id"]}\"", @noko))
+			header_row["w:rsidTr"] = header["id"]
 			
 			header_props = header_row.add_child(Nokogiri::XML::Node.new("trPr", @noko))
 			header_props.add_child(Nokogiri::XML::Node.new("tblHeader w:val=\"true\"", @noko))
@@ -392,16 +390,14 @@ class SerpicoLua
 		for body_rows in 1..body_row_count
 			# Add the header table to the results
 			body = {}
-			body["id"] = rand(999999)
+			body["id"] = rand(999999).to_s()
 			body["index"] = body_rows
 			result["body_rows"] << body
 			
 			body_row = table.add_child(Nokogiri::XML::Node.new("tr", @noko))
 			
 			# Add custom property to the table so we can find it later
-			body_custom_xml = body_row.add_child(Nokogiri::XML::Node.new("w:customXml", @noko))
-			body_custom_xml_props = body_custom_xml.add_child(Nokogiri::XML::Node.new("w:customXmlPr", @noko))
-			body_custom_xml_props.add_child(Nokogiri::XML::Node.new("w:attr w:name=\"serpico_body_row_id\" w:val=\"#{body["id"]}\"", @noko))
+			body_row["w:rsidTr"] = body["id"]
 			
 			body_props = body_row.add_child(Nokogiri::XML::Node.new("trPr", @noko))
 			body_props.add_child(Nokogiri::XML::Node.new("cantSplit w:val=\"false\"", @noko))
@@ -428,9 +424,56 @@ class SerpicoLua
 			end
 		end
 		
+		# Functions
+		result["GetBodyRow"] = lambda { |table, index| lua_wordtable_getbodyrow(table, index) }
+		result["AddBodyRow"] = lambda { |table| lua_wordtable_addbodyrow(table) }
+			
 		return result
 	end
 	
+	def lua_wordtable_getbodyrow(table, index)
+		
+	end
+	
+	def lua_wordtable_addbodyrow(table)
+		# Start by making sure the table ID is a number
+		unless table["id"].to_i() > 0
+			# throw an exception or something?
+			return nil
+		end
+		
+		# Now find the table
+		table_root = nil	
+		@noko.xpath("//w:tbl", 'w' => $W_URI).each do |attr_node|
+			if (attr_node.to_s().include?("w:rsidR=\"#{table["id"]}\""))
+				table_root = attr_node
+				break
+			end
+		end
+
+		puts table_root
+		unless table_root
+			# throw an exception or something?
+			return nil
+		end
+		
+		# Copy the last <w:tr> and append to the table
+		old_row = table_root.xpath("w:tr[last()]", 'w' => $W_URI).first
+		if old_row
+			new_row = old_row.clone(1)
+			
+			# Replace the ID with a new one
+			new_id = rand(999999).to_s()
+			#puts "New row should be ID #{new_id}"
+			new_row["w:rsidTr"] = new_id
+			table_root.add_child(new_row)
+		else
+			# throw an exception or something?
+			return nil
+		end
+
+		return 1
+	end
 
 end
 

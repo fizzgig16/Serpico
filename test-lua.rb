@@ -11,4 +11,5 @@ Zip::Archive.open("templates/testdoc.docx", Zip::CREATE) do |zipfile|
 		end
 	end
 
-run_lua(document, "")
+noko = Nokogiri::XML(document)
+run_lua(noko, "")
