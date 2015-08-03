@@ -140,6 +140,12 @@ class SerpicoLua
 			# WordTable:Create(columns, header_row_count, body_row_count)
 			'Create' => lambda { |this, columns, header_row_count, body_row_count| lua_wordtable_create(this, columns, header_row_count, body_row_count) }
 		}
+			
+		@state.Document =
+		{
+			# WordTable:Create(columns, header_row_count, body_row_count)
+			'AddParagraph' => lambda { |this, text| lua_document_addparagraph(this, text) }
+		}
 		
 	end
 
@@ -151,7 +157,7 @@ class SerpicoLua
 	#### Label functions ####
 	# Replaces an entire label with another value. This destroys the label, so be careful when you call it!
 	def lua_label_replace(this, labelname, value)
-		puts "Called replace"
+		#puts "Called replace"
 		full_label = get_full_label(labelname)
 		@noko.xpath('//text()').each do |node|
 			node.content = node.content.force_encoding("ASCII-8BIT").gsub(/#{full_label}/, value)
@@ -217,15 +223,15 @@ class SerpicoLua
 		
 		@noko.xpath("//w:tc/w:p/w:r/w:t[contains(text(), \"#{full_label}\")]", 'w' => $W_URI).each do |cell_node|
 			#puts "Found #{cell_node}"
-			shading_node = cell_node.xpath("../../../w:tcPr/w:shd", 'w' => $W_URI)
-			if (shading_node.empty?)
-				prop_node = cell_node.xpath("../../../w:tcPr", 'w' => $W_URI)
+			shading_node = cell_node.xpath("../../../w:tcPr/w:shd", 'w' => $W_URI).first
+			if (shading_node)
+				#puts "Found shading node"
+				#shading_node = shading_node.first
+				shading_node["w:fill"] = rgbstring
+			else
+				prop_node = cell_node.xpath("../../../w:tcPr", 'w' => $W_URI).first
 				#<w:shd w:fill="FF0000" w:val="clear"/>
 				prop_node.add_child(Nokogiri::XML::Node.new("shd w:fill=\"#{rgbstring}\" w:val=\"clear\"", @noko))
-			else
-				#puts "Found shading node"
-				shading_node = shading_node.first
-				shading_node["w:fill"] = rgbstring
 			end
 			
 			#puts "Content: #{@noko}\n\n"
@@ -277,27 +283,27 @@ class SerpicoLua
 			table = {}
 			
 			# Functions
-			table["GetTitle"] = lambda { |table| lua_finding_gettitle(table) }
-			table["GetID"] = lambda { |table| lua_finding_getid(table) }
+			table["GetTitle"] = lambda { |table| table["title"] }
+			table["GetID"] = lambda { |table| table["id"] }
+			table["GetEffort"] = lambda { |table| table["effort"] }
+			table["GetType"] = lambda { |table| table["type"] }
+			table["GetOverview"] = lambda { |table| table["overview"] }
+			table["GetRemediation"] = lambda { |table| table["remediation"] }
+			table["GetRisk"] = lambda { |table| table["risk"] }
 			
 			# Attributes
 			table["id"] = finding.xpath("id").first.content
 			table["title"] = finding.xpath("title").first.content
+			table["effort"] = finding.xpath("effort").first.content
+			table["type"] = finding.xpath("type").first.content
+			table["overview"] = finding.xpath("overview/paragraph").first.content
+			table["remediation"] = finding.xpath("remediation/paragraph").first.content
+			table["risk"] = finding.xpath("risk").first.content
+			
 			output << table
 		end
 		
 		return output
-	end
-	
-	#### Finding functions ####
-	def lua_finding_gettitle(this)
-		#puts "GetTitle returning #{this["title"]}"
-		return this["title"]
-	end
-	
-	def lua_finding_getid(this)
-		#puts "GetTitle returning #{this["title"]}"
-		return this["id"]
 	end
 	
 	#### WordTable functions ####
@@ -312,6 +318,8 @@ class SerpicoLua
 		total_width = 9681
 		table_id = rand(999999).to_s()
 
+		puts "Creating table with ID #{table_id}"
+		
 		# This is the table we will pass back to Lua for future reference
 		result = {}
 		result["id"] = table_id
@@ -352,6 +360,7 @@ class SerpicoLua
 			header = {}
 			header["id"] = rand(999999).to_s()
 			header["index"] = header_rows
+			header["SetCellText"] = lambda { |this, cellindex, text| lua_row_setcelltext(this, cellindex, text) }
 			result["header_rows"] << header
 			
 			header_row = table.add_child(Nokogiri::XML::Node.new("tr", @noko))
@@ -388,10 +397,11 @@ class SerpicoLua
 		# And the body rows
 		result["body_rows"] = []
 		for body_rows in 1..body_row_count
-			# Add the header table to the results
+			# Add the body table to the results
 			body = {}
 			body["id"] = rand(999999).to_s()
 			body["index"] = body_rows
+			body["SetCellText"] = lambda { |this, cellindex, text| lua_row_setcelltext(this, cellindex, text) }
 			result["body_rows"] << body
 			
 			body_row = table.add_child(Nokogiri::XML::Node.new("tr", @noko))
@@ -432,7 +442,48 @@ class SerpicoLua
 	end
 	
 	def lua_wordtable_getbodyrow(table, index)
+		index = index.to_i()
 		
+		# Start by making sure the table ID is a number
+		unless table["id"].to_i() > 0
+			# throw an exception or something?
+			return nil
+		end
+		
+		unless index > 0
+			# throw an exception or something?
+			return nil
+		end
+		
+		puts "Looking for table #{table["id"]}"
+		
+		# Now find the table
+		table_root = nil	
+		@noko.xpath("//w:tbl", 'w' => $W_URI).each do |attr_node|
+			if (attr_node.to_s().include?("w:rsidR=\"#{table["id"]}\""))
+				table_root = attr_node
+				break
+			end
+		end
+
+		#puts table_root
+		unless table_root
+			# throw an exception or something?
+			return nil
+		end
+		
+		# Got it
+		row = table_root.xpath("w:tr[#{index}]", 'w' => $W_URI).first
+		if row
+			body = {}
+			body["id"] = row["w:rsidTr"]
+			body["index"] = index
+			body["SetCellText"] = lambda { |this, cellindex, text| lua_row_setcelltext(this, cellindex, text) }
+			
+			return body
+		end
+		
+		return nil
 	end
 	
 	def lua_wordtable_addbodyrow(table)
@@ -451,7 +502,7 @@ class SerpicoLua
 			end
 		end
 
-		puts table_root
+		#puts table_root
 		unless table_root
 			# throw an exception or something?
 			return nil
@@ -475,6 +526,70 @@ class SerpicoLua
 		return 1
 	end
 
+	def lua_row_setcelltext(this, cellindex, text)
+		row = this
+		
+		unless row["id"].to_i() > 0
+			# throw an exception or something?
+			return nil
+		end
+		
+		# Got it
+		#puts "valid row"
+		
+		row = @noko.xpath("//w:tr[@w:rsidTr=\"#{row["id"]}\"]/w:tc[#{cellindex}]", 'w' => $W_URI).first
+		if row
+			#puts "Found row"
+			
+			# Create w:p if it doesn't exist
+			para = row.xpath("w:p", 'w' => $W_URI).first
+			if para == nil
+				para = row.add_child(Nokogiri::XML::Node.new("p", @noko))
+			end
+			
+			# Create w:r if it doesn't exist
+			run = para.xpath("w:r", 'w' => $W_URI).first
+			if run == nil
+				run = para.add_child(Nokogiri::XML::Node.new("r", @noko))
+			end
+			
+			# Create w:t if it doesn't exist
+			text_node = run.xpath("w:t", 'w' => $W_URI).first
+			if text_node == nil
+				text_node = run.add_child(Nokogiri::XML::Node.new("t", @noko))
+			end
+			
+			if text
+				text_node.content = text.force_encoding("ASCII-8BIT")
+			end
+			
+			return 1
+		end
+		
+		return nil
+	end
+	
+	def lua_document_addparagraph(this, text)
+		body = @noko.xpath("//w:document/w:body", 'w' => $W_URI).first
+		unless body
+			# throw an exception or something?
+			return nil
+		end
+		
+		para = body.add_child(Nokogiri::XML::Node.new("p", @noko))
+		para_prop = para.add_child(Nokogiri::XML::Node.new("pPr", @noko))
+		para_prop.add_child(Nokogiri::XML::Node.new("pStyle", @noko))
+		para_prop.add_child(Nokogiri::XML::Node.new("rPr", @noko))
+		run = para.add_child(Nokogiri::XML::Node.new("r", @noko))
+		run.add_child(Nokogiri::XML::Node.new("rPr", @noko))
+		text_node = run.add_child(Nokogiri::XML::Node.new("t", @noko))
+		text_node.content = text.force_encoding("ASCII-8BIT")
+		
+		#puts @noko.to_s()
+		
+		return 1
+	end
+	
 end
 
 
