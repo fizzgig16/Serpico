@@ -44,9 +44,48 @@ def run_lua(document, report_xml)
 		lua.run_lua_block(code)
 	end
 	
-	# After our processing is done, replace document with whatever is in the Lua state
-	doc_text = lua.get_document()
-	#puts document
+	# All Lua blocks are done, get rid of any Lua stuff
+	lua.get_nokogiri_document().xpath("//w:t[contains(text(), \"«\")]", 'w' => $W_URI).each do |lua_start_node|
+		# Nuke any siblings up to and including anything that contains »
+		#puts "found start #{lua_start_node.to_s()}"
+		
+		found_end = false		
+		node = new_node = lua_start_node
+		
+		until found_end do
+			while new_node do
+				#puts "nuking node #{new_node.to_s()}"
+				if new_node.content.force_encoding("ASCII-8BIT").include?("»")
+					# End of our content, delete and stop the loop
+					#puts "found end"
+					found_end = true
+					new_node.content = ""
+					break
+				end
+				
+				new_node.content = ""
+				new_node = new_node.next_sibling
+			end
+			
+			unless found_end
+				# Still haven't found the end, move up to the parent paragraph and try again
+				foo = node.parent.next_sibling
+				#puts "foo is #{foo.to_s()}"
+				unless foo
+					# If it's nil, nothing else in this run, move up one more
+					#puts "moving to gparent"
+					foo = node.parent.parent.next_sibling
+				end
+				#puts "going to parent #{foo.to_s()}"
+				node = new_node = foo.xpath(".//w:t", 'w' => $W_URI).first
+				unless node
+					# No text nodes here, go to next sibling
+					node = new_node = foo.next_sibling
+				end
+				#puts "new node: #{new_node.to_s()}"
+			end
+		end
+	end
 	
 	return lua.get_nokogiri_document()
 end
@@ -85,10 +124,6 @@ class SerpicoLua
 		# Run ze code
 		@state.__eval(clean_block)
 		
-	end
-
-	def get_document()
-		return ""
 	end
 	
 	def get_nokogiri_document()
@@ -591,13 +626,13 @@ class SerpicoLua
 		end
 		
 		# Got it
-		puts "valid row"
+		#puts "valid row"
 		
 		cell_node = @noko.xpath("//w:tr[@w:rsidTr=\"#{row["id"]}\"]/w:tc[#{cellstartindex}]/w:tcPr", 'w' => $W_URI).first
 		if cell_node
-			puts "found cell: #{cell_node.to_s()}\n\n"
+			#puts "found cell: #{cell_node.to_s()}\n\n"
 			cell_node.add_child(Nokogiri::XML::Node.new("gridSpan w:val=\"#{numcols}\"", @noko))
-			puts "New node: #{cell_node.to_s()}\n\n"
+			#puts "New node: #{cell_node.to_s()}\n\n"
 			
 			# Now get rid of numcols - 1 w:tc nodes after it
 			for i in 1..(numcols -1)
