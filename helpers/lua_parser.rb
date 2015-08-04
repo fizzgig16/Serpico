@@ -361,6 +361,7 @@ class SerpicoLua
 			header["id"] = rand(999999).to_s()
 			header["index"] = header_rows
 			header["SetCellText"] = lambda { |this, cellindex, text| lua_row_setcelltext(this, cellindex, text) }
+			header["SpanCells"] = lambda { | this, cellstartindex, numcols | lua_row_spancells(this, cellstartindex, numcols) }
 			result["header_rows"] << header
 			
 			header_row = table.add_child(Nokogiri::XML::Node.new("tr", @noko))
@@ -402,6 +403,7 @@ class SerpicoLua
 			body["id"] = rand(999999).to_s()
 			body["index"] = body_rows
 			body["SetCellText"] = lambda { |this, cellindex, text| lua_row_setcelltext(this, cellindex, text) }
+			body["SpanCells"] = lambda { | this, cellstartindex, numcols | lua_row_spancells(this, cellstartindex, numcols) }
 			result["body_rows"] << body
 			
 			body_row = table.add_child(Nokogiri::XML::Node.new("tr", @noko))
@@ -455,7 +457,7 @@ class SerpicoLua
 			return nil
 		end
 		
-		puts "Looking for table #{table["id"]}"
+		#puts "Looking for table #{table["id"]}"
 		
 		# Now find the table
 		table_root = nil	
@@ -479,6 +481,7 @@ class SerpicoLua
 			body["id"] = row["w:rsidTr"]
 			body["index"] = index
 			body["SetCellText"] = lambda { |this, cellindex, text| lua_row_setcelltext(this, cellindex, text) }
+			body["SpanCells"] = lambda { | this, cellstartindex, numcols | lua_row_spancells(this, cellstartindex, numcols) }
 			
 			return body
 		end
@@ -567,6 +570,42 @@ class SerpicoLua
 		end
 		
 		return nil
+	end
+	
+	#<w:gridSpan w:val="2"/>
+	def lua_row_spancells(this, cellstartindex, numcols)
+		row = this
+		
+		unless row["id"].to_i() > 0
+			# throw an exception or something?
+			return nil
+		end
+		
+		cellstartindex = cellstartindex.to_i()
+		numcols = numcols.to_i()
+		unless cellstartindex > 0
+			return nil
+		end
+		unless numcols > 0
+			return nil
+		end
+		
+		# Got it
+		puts "valid row"
+		
+		cell_node = @noko.xpath("//w:tr[@w:rsidTr=\"#{row["id"]}\"]/w:tc[#{cellstartindex}]/w:tcPr", 'w' => $W_URI).first
+		if cell_node
+			puts "found cell: #{cell_node.to_s()}\n\n"
+			cell_node.add_child(Nokogiri::XML::Node.new("gridSpan w:val=\"#{numcols}\"", @noko))
+			puts "New node: #{cell_node.to_s()}\n\n"
+			
+			# Now get rid of numcols - 1 w:tc nodes after it
+			for i in 1..(numcols -1)
+				cell_next = cell_node.parent.next_sibling.remove()
+			end
+		end
+		
+		return 1
 	end
 	
 	def lua_document_addparagraph(this, text)
