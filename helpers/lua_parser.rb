@@ -11,6 +11,7 @@ $W_URI = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 # o thing: &#xA4;
 # Start lua: &#xAB;
 # End Lua: &#xBB;
+
 def run_lua(document, report_xml)
 	###############################
 	# « - begin Lua block
@@ -21,15 +22,11 @@ def run_lua(document, report_xml)
 	
 	lua = SerpicoLua.new(document, report_xml)
 		
-	#puts "Doc before: #{document}\n\n"
-	#puts "Report: #{report_xml}\n\n"
 	doc_text = CGI::unescapeHTML(document.to_s()).force_encoding("ASCII-8BIT")
-	#puts doc_text
+	
 	doc_text.scan(/«(.*?)»/m).each do |lua_block|
 		lua_block = lua_block[0]	# Only get the capture group
-		
-		#puts "Before: #{lua_block}"
-		
+
 		# Replace paragraph ends with newlines. This is a trick for our regex below
 		lua_block.gsub!(/<\/w:p>/, "<w:t>\\n</w:t>")
 		
@@ -95,9 +92,6 @@ class SerpicoLua
 		# Start the Lua engine
 		@state = Lua::State.new()
 		
-		# Store document in state so we can work with it
-		#@state.document = doc
-		
 		# Build a nokogiri document from the doc we passed in so we only parse it once
 		@noko = doc
 		
@@ -113,9 +107,6 @@ class SerpicoLua
 
 	def run_lua_block(lua_block)
 		# Clean up stupid stuff like smart quotes and double-dashes
-		
-		#puts "Calling Lua block"
-		
 		clean_block = lua_block
 		clean_block.gsub!("“", "\"")
 		clean_block.gsub!("”", "\"")
@@ -192,7 +183,6 @@ class SerpicoLua
 	#### Label functions ####
 	# Replaces an entire label with another value. This destroys the label, so be careful when you call it!
 	def lua_label_replace(this, labelname, value)
-		#puts "Called replace"
 		full_label = get_full_label(labelname)
 		@noko.xpath('//text()').each do |node|
 			node.content = node.content.force_encoding("ASCII-8BIT").gsub(/#{full_label}/, value)
@@ -206,7 +196,6 @@ class SerpicoLua
 		# Need to see if our label is immediately preceded by <w:t>; if so, means we have our own text block we can colorize, or at least star with
 		# If not, need to end the block we're currently in and start a new one with the color of our choosing
 		@noko.xpath("//w:t[contains(text(), \"#{full_label}\")]", 'w' => $W_URI).each do |text_node|
-			#puts "Found #{text_node}"
 			run = text_node.xpath("../../w:r", 'w' => $W_URI).first
 			run_props = text_node.xpath("../w:rPr", 'w' => $W_URI).first			
 
@@ -219,7 +208,6 @@ class SerpicoLua
 				new_run = run
 				new_text_node = text_node
 				
-				#puts "Frags: #{arr_fragments}"
 				while (arr_fragments.length >= 2) # Means we have more than one label to deal with
 					before = arr_fragments[0]
 					after = arr_fragments[1]
@@ -268,9 +256,6 @@ class SerpicoLua
 				#<w:shd w:fill="FF0000" w:val="clear"/>
 				prop_node.add_child(Nokogiri::XML::Node.new("shd w:fill=\"#{rgbstring}\" w:val=\"clear\"", @noko))
 			end
-			
-			#puts "Content: #{@noko}\n\n"
-			#@state.document = @noko.to_s()
 		end
 	end
 	
@@ -294,9 +279,6 @@ class SerpicoLua
 					shading_node["w:fill"] = rgbstring
 				end
 			end
-			
-			#puts "Content: #{@noko}\n\n"
-			#@state.document = @noko.to_s()
 		end
 	end
 	
@@ -309,12 +291,10 @@ class SerpicoLua
 	
 	# Returns a table of Finding(s)
 	def lua_findings_getallfindings(this)
-		#puts "GetAllFindings()"
 		output = []
 		findings = @noko_report.xpath("/report/findings_list/findings")
 		findings.each do |finding|
 			# Create a table
-			#puts "Creating finding table"
 			table = {}
 			
 			# Functions
@@ -388,7 +368,6 @@ class SerpicoLua
 	
 		# Now the rows, header first
 		result["header_rows"] = []
-		#puts "Have #{header_row_count} headers"
 		
 		for header_rows in 1..header_row_count
 			# Add the header table to the results
@@ -492,8 +471,6 @@ class SerpicoLua
 			return nil
 		end
 		
-		#puts "Looking for table #{table["id"]}"
-		
 		# Now find the table
 		table_root = nil	
 		@noko.xpath("//w:tbl", 'w' => $W_URI).each do |attr_node|
@@ -503,7 +480,6 @@ class SerpicoLua
 			end
 		end
 
-		#puts table_root
 		unless table_root
 			# throw an exception or something?
 			return nil
@@ -540,7 +516,6 @@ class SerpicoLua
 			end
 		end
 
-		#puts table_root
 		unless table_root
 			# throw an exception or something?
 			return nil
@@ -553,7 +528,6 @@ class SerpicoLua
 			
 			# Replace the ID with a new one
 			new_id = rand(999999).to_s()
-			#puts "New row should be ID #{new_id}"
 			new_row["w:rsidTr"] = new_id
 			table_root.add_child(new_row)
 		else
@@ -572,13 +546,8 @@ class SerpicoLua
 			return nil
 		end
 		
-		# Got it
-		#puts "valid row"
-		
 		row = @noko.xpath("//w:tr[@w:rsidTr=\"#{row["id"]}\"]/w:tc[#{cellindex}]", 'w' => $W_URI).first
 		if row
-			#puts "Found row"
-			
 			# Create w:p if it doesn't exist
 			para = row.xpath("w:p", 'w' => $W_URI).first
 			if para == nil
@@ -607,7 +576,6 @@ class SerpicoLua
 		return nil
 	end
 	
-	#<w:gridSpan w:val="2"/>
 	def lua_row_spancells(this, cellstartindex, numcols)
 		row = this
 		
@@ -625,14 +593,9 @@ class SerpicoLua
 			return nil
 		end
 		
-		# Got it
-		#puts "valid row"
-		
 		cell_node = @noko.xpath("//w:tr[@w:rsidTr=\"#{row["id"]}\"]/w:tc[#{cellstartindex}]/w:tcPr", 'w' => $W_URI).first
 		if cell_node
-			#puts "found cell: #{cell_node.to_s()}\n\n"
 			cell_node.add_child(Nokogiri::XML::Node.new("gridSpan w:val=\"#{numcols}\"", @noko))
-			#puts "New node: #{cell_node.to_s()}\n\n"
 			
 			# Now get rid of numcols - 1 w:tc nodes after it
 			for i in 1..(numcols -1)
@@ -658,8 +621,6 @@ class SerpicoLua
 		run.add_child(Nokogiri::XML::Node.new("rPr", @noko))
 		text_node = run.add_child(Nokogiri::XML::Node.new("t", @noko))
 		text_node.content = text.force_encoding("ASCII-8BIT")
-		
-		#puts @noko.to_s()
 		
 		return 1
 	end
