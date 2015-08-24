@@ -50,7 +50,9 @@ class Findings
     property :poc, String, :length => 20000, :required => false
     property :remediation, String, :length => 20000, :required => false
     property :notes, String, :length => 1000000, :required => false
-    property :assessment_type, String, :required => false
+    property :perspective, String, :required => false
+	property :finding_group, String, :required => false
+	property :finding_issue, String, :required => false
     property :references, String, :length => 20000, :required => false
     property :risk, Integer, :required => false
     property :affected_hosts, String, :length => 1000000, :required => false
