@@ -199,6 +199,7 @@ class Reports
     property :company_website, String, :length => 200
     property :owner, String, :length => 200
     property :authors, CommaSeparatedList, :required => false, :lazy => false
+    property :author_details, CommaSeparatedList, :required => false, :lazy => false
     property :user_defined_variables, String, :length => 10000
 
 end

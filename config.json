@@ -10,6 +10,14 @@
     "burpmap":false, //maps burp findings to serpico findings
     "finding_types": ["Web Application","Network Services", "Best Practice", "Compliance", "Database", "Network Internal", "Router Configuration","Social Engineering", "Physical", "Wireless", "Network Security", "System Security", "Logging and Auditing"],
     "logo":"/img/logo_1.png",
-    "auto_import":false //Experimental, will automatically create new findings on import
+    "auto_import":false, //Experimental, will automatically create new findings on import
+	"effort_types": ["Low", "Medium", "High"],
+	"perspective": ["External", "Internal", "Internal/External", "Wireless", "Web Application", "DoS"],
+	"finding_group": ["Whatever"],
+	"finding_issue" : ["Whatever 2"],
+	"perspective_label": "Perspective",
+	"finding_types_label": "Finding Category",
+	"finding_group_label": "Group", 
+	"finding_issue_label": "Issue"
 }
 

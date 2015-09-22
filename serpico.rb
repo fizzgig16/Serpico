@@ -27,8 +27,36 @@ set :bind, "0.0.0.0"
 
 ## Global variables
 set :finding_types, config_options["finding_types"]
-set :effort, ["LOW","MEDIUM","HARD"]
-set :assessment_types, ["External", "Internal", "Internal/External", "Wireless", "Web Application", "DoS"]
+
+if config_options["effort_types"]
+	set :effort, config_options["effort_types"]
+else
+	set :effort, ["LOW","MEDIUM","HARD"]
+end
+
+if config_options["perspective"]
+	set :perspective, config_options["perspective"]
+else
+	set :perspective, nil
+end
+
+if config_options["finding_group"]
+	set :finding_group, config_options["finding_group"]
+else
+	set :finding_group, nil
+end
+
+if config_options["finding_issue"]
+	set :finding_issue, config_options["finding_issue"]
+else
+	set :finding_issue, nil
+end
+
+set :perspective_label, config_options["perspective_label"]
+set :finding_types_label, config_options["finding_types_label"]
+set :finding_group_label, config_options["finding_group_label"]
+set :finding_issue_label, config_options["finding_issue_label"]
+
 set :status, ["EXPLOITED"]
 set :show_exceptions, false
 
@@ -281,14 +309,23 @@ post '/admin/add_user/:id' do
     end
 
     authors = report.authors
-
+	author_details = report.author_details
+	details = get_user_info(params[:author])
+	
     if authors
         authors = authors.push(params[:author])
     else
         authors = ["#{params[:author]}"]
     end
+	
+	if author_details
+		author_details = author_details.push(JSON.generate(details))
+	else
+		author_details = ["#{JSON.generate(details)}"]
+	end
 
     report.authors = authors
+	report.author_details = author_details
     report.save
 
     redirect to("/reports/list")
@@ -311,12 +348,18 @@ get '/admin/del_user_report/:id/:author' do
     end
 
     authors = report.authors
-
+	author_details = report.author_details
+	
     if authors
         authors = authors - ["#{params[:author]}"]
+		if author_details
+			details = get_user_info(params[:author])
+			author_details = author_details - ["#{JSON.generate(details)}"]
+		end
     end
 
     report.authors = authors
+	report.author_details = author_details
     report.save
 
     redirect to("/reports/list")
@@ -1872,7 +1915,7 @@ get '/report/:id/generate' do
     # Push the finding from XML to XSLT
     xslt = Nokogiri::XSLT(template_data)
 
-	#puts("report_xml: #{report_xml}")
+	puts("report_xml: #{report_xml}")
 
     docx_xml = xslt.transform(Nokogiri::XML(report_xml))
 
@@ -2162,4 +2205,20 @@ def image_insert(docx, rand_file, image, end_xml)
 	end
 
 	return docx
+end
+
+def get_user_info(username)
+	user = User.first(:username => username)
+	if user == nil
+		return nil
+	end
+	
+	user_details = {}
+	user_details["id"] = user.id
+	user_details["consultant_name"] = user.consultant_name
+	user_details["consultant_phone"] = user.consultant_phone
+	user_details["consultant_email"] = user.consultant_email
+	user_details["consultant_title"] = user.consultant_title
+	
+	return user_details
 end

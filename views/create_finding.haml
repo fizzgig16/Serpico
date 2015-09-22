@@ -10,16 +10,28 @@
         %input{ :type => 'text', :name => 'title', :value => ""}
     - if !@master
       .control-group
-        %label{ :class => "control-label", :for => "assessment_type" } Assessment Type
+        %label{ :class => "control-label", :for => "perspective" }= options.perspective_label
         .controls
-          %select{ :name => "assessment_type" }
-            - options.assessment_types.each do |type|
+          %select{ :name => "perspective" }
+            - options.perspective.each do |type|
               %option #{type}
     .control-group
-      %label{ :class => "control-label", :for => "type" } Finding Type
+      %label{ :class => "control-label", :for => "type" }= options.finding_types_label
       .controls
         %select{ :name => "type" }
           - options.finding_types.each do |type|  
+            %option #{type}
+    .control-group
+      %label{ :class => "control-label", :for => "group" }= options.finding_group_label
+      .controls
+        %select{ :name => "group" }
+          - options.finding_group.each do |type|  
+            %option #{type}
+    .control-group
+      %label{ :class => "control-label", :for => "issue" }= options.finding_issue_label
+      .controls
+        %select{ :name => "issue" }
+          - options.finding_issue.each do |type|  
             %option #{type}
     - if @nessusmap
       .control-group
